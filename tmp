@@ -1,0 +1,9 @@
+(lerobot) agilex@agilex:~/.why/lerobot$ python src/act_client.py     --host 192.168.10.1     --port 8765     --frequency 30     --robot.type bi_piper     --robot.can_left can_left     --robot.can_right can_right     --robot.velocity 30     --robot.cameras "{observation.images.image_top: {type: opencv, index_or_path: 10, width: 640, height: 480, fps: 30}, observation.images.image_left: {type: opencv, index_or_path: 4, width: 640, height: 480, fps: 30}, observation.images.image_right: {type: opencv, index_or_path: 16, width: 640, height: 480, fps: 30}}"
+⚠️ OpenCV 无 GUI 支持，已自动关闭窗口显示（仍会录制视频）。错误: OpenCV(4.13.0) /io/opencv/modules/highgui/src/window.cpp:1284: error: (-2:Unspecified error) The function is not implemented. Rebuild the library with Windows, GTK+ 2.x or Cocoa support. If you are on Ubuntu or Debian, install libgtk2.0-dev and pkg-config, then re-run cmake or configure script in function 'cvNamedWindow'
+
+Waiting for Piper to enable...
+Waiting for Piper to enable...
+✅ 机械臂已连接
+✅ 已连接到 ACT 服务器 192.168.10.1:8765
+[ServerAction step=0] [0.7635, 1.9210, -1.6766, -0.0106, 1.1887, 0.0504, 0.3384, -0.0098, 0.0000, -0.5070, 0.0469, 1.0751, -0.0290, 0.7577]
+Step 0 | L_J1: -0.010 | R_J1: 0.764 | L_Grip raw->cmd: 0.7577->0.0698 | R_Grip raw->cmd: 0.3384->0.0312

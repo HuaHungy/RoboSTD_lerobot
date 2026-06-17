@@ -191,6 +191,15 @@ def concat_data_files(paths_to_cat, new_root, chunk_idx, file_idx, image_keys):
     path.parent.mkdir(parents=True, exist_ok=True)
 
     if len(image_keys) > 0:
+        for key in image_keys:
+            if key not in concatenated_df.columns:
+                base_dir = str(new_root.resolve()).replace("_v30", "")
+                paths = concatenated_df.apply(
+                    lambda row: {"path": f"{base_dir}/images/{key}/episode_{int(row['episode_index']):06d}/frame_{int(row['frame_index']):06d}.jpg", "bytes": None},
+                    axis=1
+                )
+                concatenated_df[key] = paths
+                
         schema = pa.Schema.from_pandas(concatenated_df)
         features = Features.from_arrow_schema(schema)
         for key in image_keys:
@@ -451,6 +460,44 @@ def convert_info(root, new_root, data_file_size_in_mb, video_file_size_in_mb):
     write_info(info, new_root)
 
 
+def convert_images_to_videos(root: Path):
+    import subprocess
+    info = load_info(root)
+    features = info["features"]
+    image_keys = [key for key, ft in features.items() if ft["dtype"] == "image"]
+    if not image_keys:
+        return
+
+    logging.info(f"Converting images to videos for {image_keys}")
+    fps = int(info.get("fps", 30))
+    for key in image_keys:
+        img_dir = root / "images" / key
+        if not img_dir.exists():
+            continue
+        ep_dirs = sorted(img_dir.glob("episode_*"))
+        for ep_dir in tqdm.tqdm(ep_dirs, desc=f"Encoding {key} to MP4"):
+            ep_idx = ep_dir.name.split("_")[-1]
+            out_dir = root / "videos" / "chunk-000" / key
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"episode_{ep_idx}.mp4"
+            cmd = [
+                "ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps),
+                "-i", str(ep_dir / "frame_%06d.jpg"),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                str(out_path)
+            ]
+            subprocess.run(cmd, check=True)
+            
+        features[key]["dtype"] = "video"
+        features[key]["video_info"] = {
+            "video.fps": fps,
+            "video.codec": "h264",
+            "video.pix_fmt": "yuv420p",
+            "video.is_depth_map": False
+        }
+    write_info(info, root)
+
+
 def convert_dataset(
     repo_id: str,
     branch: str | None = None,
@@ -465,8 +512,11 @@ def convert_dataset(
     if video_file_size_in_mb is None:
         video_file_size_in_mb = DEFAULT_VIDEO_FILE_SIZE_IN_MB
 
+    explicit_root = root is not None
+    local_only = explicit_root or not push_to_hub
+
     # First check if the dataset already has a v3.0 version
-    if root is None and not force_conversion:
+    if not local_only and not force_conversion:
         try:
             print("Trying to download v3.0 version of the dataset from the hub...")
             snapshot_download(repo_id, repo_type="dataset", revision=V30, local_dir=HF_LEROBOT_HOME / repo_id)
@@ -480,7 +530,13 @@ def convert_dataset(
     if root.exists():
         validate_local_dataset_version(root)
         use_local_dataset = True
-        print(f"Using local dataset at {root}")
+        mode_msg = " in local-only mode" if local_only else ""
+        print(f"Using local dataset at {root}{mode_msg}")
+    elif local_only:
+        raise FileNotFoundError(
+            f"Local-only conversion requested, but dataset root does not exist: {root}. "
+            "Pass --root to the exact local dataset directory containing meta/, data/, and videos/."
+        )
 
     old_root = root.parent / f"{root.name}_old"
     new_root = root.parent / f"{root.name}_v30"
@@ -506,6 +562,10 @@ def convert_dataset(
     episodes_metadata = convert_data(root, new_root, data_file_size_in_mb)
     episodes_videos_metadata = convert_videos(root, new_root, video_file_size_in_mb)
     convert_episodes_metadata(root, new_root, episodes_metadata, episodes_videos_metadata)
+    
+    if (root / "images").exists():
+        print(f"Copying images from {root}/images to {new_root}/images")
+        shutil.copytree(str(root / "images"), str(new_root / "images"))
 
     shutil.move(str(root), str(old_root))
     shutil.move(str(new_root), str(root))
